@@ -1,0 +1,302 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+paths:
+  /safemap/triage:
+    post:
+      operationId: triageSafemapReport
+      tags: [Safemap]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafemapTriageInput" }
+      responses:
+        "200":
+          description: AI suggestion or explicit unavailable result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [triage]
+                properties:
+                  triage:
+                    allOf: [{ $ref: "#/components/schemas/SafemapTriage" }]
+                    nullable: true
+  /safemap/my-reports:
+    get:
+      operationId: listMySafemapReports
+      tags: [Safemap]
+      responses:
+        "200":
+          description: Reports owned by the current reporting session
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SafemapReport" }
+  /safemap/photos/{id}:
+    get:
+      operationId: getSafemapPhoto
+      summary: Serve a photo after checking reporter ownership, analyst access, or public approved visibility.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Report photo
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/webp:
+              schema: { type: string, format: binary }
+        "404": { description: Photo is absent or private }
+  /safemap/demo-images/{name}:
+    get:
+      operationId: getSafemapDemoImage
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Clearly labeled fictional illustration
+          content:
+            image/svg+xml:
+              schema: { type: string, format: binary }
+        "404": { description: Unknown illustration }
+  /safemap/session:
+    get:
+      operationId: getSafemapSession
+      responses:
+        "200":
+          description: Current prototype session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafemapSession" }
+    post:
+      operationId: createSafemapSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafemapLogin"
+      responses:
+        "200":
+          description: Session established
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafemapSession" }
+        "401": { description: Invalid demo credentials }
+    delete:
+      operationId: deleteSafemapSession
+      responses:
+        "204": { description: Signed out }
+  /safemap/reports:
+    get:
+      operationId: listSafemapReports
+      description: Analysts see all reports; everyone else sees approved reports with private fields omitted.
+      responses:
+        "200":
+          description: Reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SafemapReport" }
+        "503": { description: Unable to load reports }
+    post:
+      operationId: createSafemapReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SafemapSubmission" }
+      responses:
+        "201":
+          description: Saved as pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafemapReport" }
+        "400": { description: Invalid submission }
+        "403": { description: Reporter session required }
+        "503": { description: Report could not be saved }
+  /safemap/reports/{id}:
+    patch:
+      operationId: updateSafemapReport
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafemapChange"
+      responses:
+        "200":
+          description: Saved analyst change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SafemapReport" }
+        "403": { description: Analyst session required }
+        "409": { description: Report was already reviewed or removed }
+  /safemap/uploads:
+    post:
+      operationId: requestSafemapUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafemapUpload"
+      responses:
+        "200":
+          description: Private photo upload URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploadURL, imageUrl]
+                properties:
+                  uploadURL: { type: string }
+                  imageUrl: { type: string }
+        "403": { description: Reporter session required }
+  /healthz:
+    get:
+      security: []
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+components:
+  schemas:
+    SafemapTriageInput:
+      type: object
+      required: [description]
+      properties:
+        description: { type: string, maxLength: 10000 }
+    SafemapLogin:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [student, analyst, resident, viewer] }
+        email: { type: string }
+        password: { type: string }
+    SafemapChange:
+      type: object
+      properties:
+        resolved: { type: boolean, enum: [true] }
+        resolutionNote: { type: string, maxLength: 2000 }
+        moderationStatus: { type: string, enum: [approved, denied, removed] }
+        moderationReason: { type: string, maxLength: 1000 }
+        analystComment: { type: string, maxLength: 2000 }
+        description: { type: string, minLength: 1, maxLength: 10000 }
+        priorityStatus: { type: string, enum: [Critical, High, Normal, Low, Unknown] }
+    SafemapUpload:
+      type: object
+      required: [contentType, size]
+      properties:
+        contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+        size: { type: integer, minimum: 1, maximum: 5242880 }
+    SafemapSession:
+      type: object
+      required: [role]
+      properties:
+        role:
+          anyOf:
+            - { type: string, enum: [student, analyst, resident, viewer] }
+            - { type: "null" }
+    SafemapSubmission:
+      type: object
+      required: [privacyMode, coordinates, locationSource, locationConfirmed, location, incidentDate, incidentTime, description, incidentType]
+      properties:
+        urgent: { type: boolean }
+        privacyMode: { type: string, enum: [anonymous, identified] }
+        displayName: { type: string, maxLength: 100 }
+        image: { type: string, maxLength: 500 }
+        coordinates:
+          type: object
+          required: [latitude, longitude]
+          properties:
+            latitude: { type: number, minimum: -90, maximum: 90 }
+            longitude: { type: number, minimum: -180, maximum: 180 }
+        locationSource: { type: string, enum: [exif, manual, address, description, device] }
+        locationAddress: { type: string, maxLength: 500 }
+        locationConfirmed: { type: boolean }
+        location: { type: string, minLength: 1, maxLength: 500 }
+        incidentDate: { type: string, maxLength: 10 }
+        incidentTime: { type: string, maxLength: 5 }
+        description: { type: string, maxLength: 10000 }
+        incidentType:
+          type: string
+          enum: [Fraud, Forgery, "Forgery — Bad Checks", Fraudulent Use of Credit/Debit Card, Harassing Communications, Identity Theft, Lost Property, Non-Injury Traffic Accident, Theft, Theft from Vehicle, Vandalism, Vandalism of Vehicle, Fighting / Violence, Harassment, Suspicious Activity, Property Damage, Medical Concern, Other Safety Concern]
+    SafemapReport:
+      allOf:
+        - { $ref: "#/components/schemas/SafemapSubmission" }
+        - type: object
+          required: [id, isDemo, reporterType, moderationStatus, priorityStatus, moderationReason, submittedAt, updatedAt, source]
+          properties:
+            analystComment: { type: string }
+            reviewedBy: { type: string }
+            resolvedAt: { type: string }
+            resolvedBy: { type: string }
+            resolutionNote: { type: string }
+            triage:
+              allOf: [{ $ref: "#/components/schemas/SafemapTriage" }]
+              nullable: true
+            id: { type: string }
+            isDemo: { type: boolean }
+            reporterType: { type: string, enum: [student, resident] }
+            moderationStatus: { type: string, enum: [pending, approved, denied, removed] }
+            priorityStatus: { type: string, enum: [Critical, High, Normal, Low, Unknown] }
+            moderationReason: { type: string }
+            moderatedAt: { type: string }
+            submittedAt: { type: string }
+            updatedAt: { type: string }
+            source: { type: string }
+    SafemapTriage:
+      type: object
+      required: [urgency, incidentType, severity, mentionedLocation, mentionedTime, spamLikelihood, spamReason, summary, suggestedDecision]
+      properties:
+        urgency: { type: string, enum: [Emergency, Non-urgent] }
+        incidentType: { type: string }
+        severity: { type: string, enum: [Low, Medium, High] }
+        mentionedLocation: { type: string }
+        mentionedTime: { type: string }
+        spamLikelihood: { type: string, enum: [Low, Medium, High] }
+        spamReason: { type: string }
+        summary: { type: string }
+        suggestedDecision: { type: string, enum: [Approve, Review, Deny] }
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
